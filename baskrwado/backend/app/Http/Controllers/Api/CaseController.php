@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\GenerateCaseAiReport;
 use App\Models\CaseRecord;
 use App\Services\CaseWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -31,6 +32,8 @@ class CaseController extends Controller
             'status' => 'intake',
             'readiness_score' => 0,
         ]);
+        $case = $workflow->refreshReport($case);
+        $workflow->recordEvent($case, 'case_created', 'Customer created the case online.', 'customer');
 
         return response()->json([
             'message' => 'Case created.',
@@ -40,11 +43,13 @@ class CaseController extends Controller
 
     public function answers(Request $request, string $publicId, CaseWorkflowService $workflow): JsonResponse
     {
-        $case = CaseRecord::query()->where('public_id', $publicId)->firstOrFail();
+        $case = CaseRecord::query()->where('public_id', strtoupper($publicId))->firstOrFail();
         $validated = $request->validate([
+            'phone' => ['required', 'string', 'max:30'],
             'answers' => ['required', 'array', 'max:40'],
             'answers.*' => ['nullable', 'string', 'max:5000'],
         ]);
+        abort_unless(hash_equals($case->phone, $this->normalizePhone($validated['phone'])), 403, 'The case ID and mobile number do not match.');
 
         foreach ($validated['answers'] as $key => $value) {
             $case->answers()->updateOrCreate(
@@ -54,6 +59,8 @@ class CaseController extends Controller
         }
 
         $case = $workflow->refreshReport($case);
+        $workflow->recordEvent($case, 'intake_updated', 'Customer updated case intake.', 'customer');
+        GenerateCaseAiReport::dispatch($case->id);
 
         return response()->json([
             'message' => 'Case details saved.',
@@ -64,7 +71,10 @@ class CaseController extends Controller
     public function show(Request $request, string $publicId, CaseWorkflowService $workflow): JsonResponse
     {
         $validated = $request->validate(['phone' => ['required', 'string', 'max:30']]);
-        $case = CaseRecord::query()->where('public_id', strtoupper($publicId))->firstOrFail();
+        $case = CaseRecord::query()
+            ->with(['notes' => fn ($q) => $q->where('customer_visible', true)->latest()])
+            ->where('public_id', strtoupper($publicId))
+            ->firstOrFail();
 
         abort_unless(
             hash_equals($case->phone, $this->normalizePhone($validated['phone'])),
@@ -72,7 +82,14 @@ class CaseController extends Controller
             'The case ID and mobile number do not match.'
         );
 
-        return response()->json(['data' => $workflow->customerPayload($case)]);
+        return response()->json([
+            'data' => $workflow->customerPayload($case) + [
+                'updates' => $case->notes->map(fn ($note) => [
+                    'message' => $note->note,
+                    'created_at' => $note->created_at?->toIso8601String(),
+                ]),
+            ],
+        ]);
     }
 
     private function normalizePhone(string $phone): string
