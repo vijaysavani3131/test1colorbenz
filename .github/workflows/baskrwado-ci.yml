@@ -6,9 +6,9 @@ on:
       - 'baskrwado/**'
       - '.github/workflows/baskrwado-ci.yml'
   push:
-    branches: [main]
     paths:
       - 'baskrwado/**'
+      - '.github/workflows/baskrwado-ci.yml'
 
 jobs:
   frontend:
