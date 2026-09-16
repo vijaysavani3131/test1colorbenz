@@ -2,7 +2,6 @@
 
 return [
     'baskrwado' => [
-        'admin_api_key' => env('ADMIN_API_KEY'),
         'frontend_url' => env('FRONTEND_URL', 'http://localhost:5173'),
     ],
     'openai' => [
