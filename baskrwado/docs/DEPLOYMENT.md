@@ -37,11 +37,11 @@ Example location:
 /var/www/baskrwado/backend
 ```
 
-Install:
+Install the dependency versions pinned by the committed `composer.lock`:
 
 ```bash
 cd /var/www/baskrwado/backend
-composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 cp .env.example .env
 php artisan key:generate
 ```
@@ -104,14 +104,14 @@ VITE_API_URL=https://api.yourdomain.in/api
 VITE_WHATSAPP_NUMBER=91XXXXXXXXXX
 ```
 
-Build:
+Build from the committed npm lockfile:
 
 ```bash
-npm install --no-audit --no-fund
+npm ci --no-audit --no-fund
 npm run build
 ```
 
-A lockfile is not currently committed, so do not use `npm ci` until the project adopts and commits one. Serve the generated `dist/` directory through Nginx. The example config in `deploy/nginx-web.conf` includes SPA fallback to `index.html`.
+Serve the generated `dist/` directory through Nginx. The example config in `deploy/nginx-web.conf` includes SPA fallback to `index.html`.
 
 ## 4. Backend Nginx / PHP-FPM
 
@@ -223,15 +223,15 @@ Application logs are in `storage/logs` unless you configure another channel.
 Safe application deploy:
 
 ```bash
-# backend
-composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
+# backend — installs composer.lock versions
+composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction --no-progress
 php artisan migrate --force
 php artisan config:cache
 php artisan route:cache
 php artisan queue:restart
 
-# frontend
-npm install --no-audit --no-fund
+# frontend — installs package-lock.json versions
+npm ci --no-audit --no-fund
 npm run build
 ```
 
