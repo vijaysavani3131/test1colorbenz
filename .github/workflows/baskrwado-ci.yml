@@ -11,43 +11,6 @@ on:
       - '.github/workflows/baskrwado-ci.yml'
 
 jobs:
-  bootstrap-lockfiles:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/baskrwado-platform'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: feature/baskrwado-platform
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-      - uses: shivammathur/setup-php@v2
-        with:
-          php-version: '8.3'
-          extensions: mbstring, xml, curl, sqlite3, pdo_sqlite
-          coverage: none
-      - name: Generate dependency lockfiles
-        run: |
-          cd baskrwado/frontend
-          npm install --package-lock-only --no-audit --no-fund
-          cd ../backend
-          mkdir -p bootstrap/cache storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs database
-          touch database/database.sqlite
-          composer install --no-interaction --prefer-dist
-      - name: Commit dependency lockfiles
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add baskrwado/frontend/package-lock.json baskrwado/backend/composer.lock
-          if git diff --cached --quiet; then
-            echo "Lockfiles already committed."
-            exit 0
-          fi
-          git commit -m "build: lock frontend and backend dependencies"
-          git push origin HEAD:feature/baskrwado-platform
-
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -59,8 +22,8 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
-          cache-dependency-path: baskrwado/frontend/package.json
-      - run: npm install --no-audit --no-fund
+          cache-dependency-path: baskrwado/frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
       - run: npm run build
 
   backend:
@@ -80,11 +43,11 @@ jobs:
           mkdir -p bootstrap/cache storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs database
           touch database/database.sqlite
       - run: composer validate --strict
-      - name: Install Composer dependencies
+      - name: Install locked Composer dependencies
         shell: bash
         run: |
           set -o pipefail
-          composer install --no-interaction --prefer-dist -vvv 2>&1 | tee /tmp/baskrwado-composer.log
+          composer install --no-interaction --prefer-dist --no-progress -vvv 2>&1 | tee /tmp/baskrwado-composer.log
       - name: Upload Composer diagnostic log
         if: always()
         uses: actions/upload-artifact@v4
