@@ -24,6 +24,12 @@ jobs:
           cache: 'npm'
           cache-dependency-path: baskrwado/frontend/package.json
       - run: npm install --no-audit --no-fund
+      - name: Upload resolved npm lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: baskrwado-package-lock
+          path: baskrwado/frontend/package-lock.json
+          retention-days: 1
       - run: npm run build
 
   backend:
@@ -48,6 +54,12 @@ jobs:
         run: |
           set -o pipefail
           composer install --no-interaction --prefer-dist -vvv 2>&1 | tee /tmp/baskrwado-composer.log
+      - name: Upload resolved Composer lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: baskrwado-composer-lock
+          path: baskrwado/backend/composer.lock
+          retention-days: 1
       - name: Upload Composer diagnostic log
         if: always()
         uses: actions/upload-artifact@v4
