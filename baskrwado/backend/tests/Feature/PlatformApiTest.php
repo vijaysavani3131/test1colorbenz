@@ -62,14 +62,14 @@ class PlatformApiTest extends TestCase
         ])->assertCreated();
 
         $publicId = $created->json('data.public_id');
-        $file = UploadedFile::fake()->image('invoice.jpg', 600, 800)->size(250);
+        $file = UploadedFile::fake()->create('invoice.pdf', 250, 'application/pdf');
 
         $this->post("/api/cases/{$publicId}/documents", [
             'phone' => '1111111111',
             'file' => $file,
         ], ['Accept' => 'application/json'])->assertForbidden();
 
-        $file = UploadedFile::fake()->image('invoice.jpg', 600, 800)->size(250);
+        $file = UploadedFile::fake()->create('invoice.pdf', 250, 'application/pdf');
         $this->post("/api/cases/{$publicId}/documents", [
             'phone' => '9876500000',
             'category' => 'invoice',
