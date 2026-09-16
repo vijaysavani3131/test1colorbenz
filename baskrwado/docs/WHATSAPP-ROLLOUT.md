@@ -1,194 +1,323 @@
-# WhatsApp Rollout — BasKarwaDo
+# WhatsApp Business Platform — BasKarwaDo Production Setup
 
-The website should launch first with the shared Case API. WhatsApp then becomes a second customer interface over the same workflow engine.
+BasKarwaDo is **WhatsApp-first**, but WhatsApp and the website are not separate products. Both write to the same `case_records`, `case_answers`, `case_documents`, payments, AI report and admin operations workflow.
 
-## 1. Meta assets required
+## What is already implemented
 
-Create / confirm:
+The Laravel backend currently includes:
+
+- Meta webhook verification (`GET /api/webhooks/whatsapp`)
+- signed webhook validation with `X-Hub-Signature-256`
+- idempotent incoming message/status persistence
+- queued `ProcessWhatsAppEvent`
+- conversation sessions + full inbound/outbound message audit
+- English / Hindi / Gujarati detection and manual `EN` / `HI` / `GU` switching
+- Hinglish / Gujlish-friendly AI/fallback intent classification
+- routing into all 7 BasKarwaDo services
+- deterministic next-question workflow
+- WhatsApp-originated `CaseRecord` creation
+- customer `status` command
+- customer `human` / `agent` handoff command
+- image/PDF download from Meta media IDs
+- private case document storage
+- queued document extraction + case AI report
+- outbound free-form text client
+- outbound reply-button client
+- outbound approved-template client
+- delivery/read/failure status persistence
+
+The webhook itself stays lightweight: verify → persist → queue → `200`. Business logic runs in the queue worker.
+
+## 1. Meta assets you need
+
+Create or confirm these in Meta Business / Developers:
 
 1. Meta Business Portfolio
-2. Meta Developer app with the WhatsApp product
-3. WhatsApp Business Account (WABA)
-4. A business phone number for BasKarwaDo
-5. Phone Number ID
-6. WABA ID
-7. App Secret
-8. Long-lived/system-user access token for production
+2. Meta Developer app
+3. WhatsApp product on that app
+4. WhatsApp Business Account (WABA)
+5. A phone number dedicated to BasKarwaDo
+6. Phone Number ID
+7. Meta App Secret
+8. Production access token / system-user token appropriate for your Meta setup
 
-Use the latest supported Graph API version through `WHATSAPP_GRAPH_VERSION`; do not hard-code it in application logic.
+Do not put any of these secrets into React. They belong only on the Laravel server / secret manager.
 
-Typical permissions needed for production management/messaging are `whatsapp_business_messaging` and `whatsapp_business_management`, subject to Meta's current setup and review requirements.
-
-## 2. Configure backend secrets
-
-Never commit real values. Put them in the production secret manager / `.env`:
+## 2. Backend environment
 
 ```env
-WHATSAPP_VERIFY_TOKEN=<random-secret-you-create>
-WHATSAPP_ACCESS_TOKEN=<production-system-user-token>
+APP_ENV=production
+APP_DEBUG=false
+APP_URL=https://api.yourdomain.in
+FRONTEND_URL=https://yourdomain.in
+
+QUEUE_CONNECTION=database
+FILESYSTEM_DISK=private
+
+WHATSAPP_VERIFY_TOKEN=<long-random-token-created-by-you>
+WHATSAPP_ACCESS_TOKEN=<production-access-token>
 WHATSAPP_PHONE_NUMBER_ID=<phone-number-id>
 WHATSAPP_APP_SECRET=<meta-app-secret>
 WHATSAPP_GRAPH_VERSION=v26.0
 ```
 
-Rotate tokens/secrets through operations procedures; never expose them to React.
+`WHATSAPP_GRAPH_VERSION` is configurable intentionally. Before each production upgrade, confirm Meta's current supported Graph API version and test in staging.
+
+Frontend:
+
+```env
+VITE_API_URL=https://api.yourdomain.in/api
+VITE_WHATSAPP_NUMBER=91XXXXXXXXXX
+```
+
+`VITE_WHATSAPP_NUMBER` is digits only, including country code.
 
 ## 3. Deploy public HTTPS webhook
 
-Backend endpoints already exist:
+Use:
 
 ```text
-GET  /api/webhooks/whatsapp   # verification challenge
-POST /api/webhooks/whatsapp   # incoming messages/statuses
+GET  https://api.yourdomain.in/api/webhooks/whatsapp
+POST https://api.yourdomain.in/api/webhooks/whatsapp
 ```
 
-Example callback URL:
+In Meta webhook settings:
+
+- Callback URL: the URL above
+- Verify token: exactly the same value as `WHATSAPP_VERIFY_TOKEN`
+- Subscribe to WhatsApp message events / statuses required by your WABA configuration
+
+In production the backend rejects invalid webhook signatures using the Meta App Secret.
+
+## 4. Run the queue worker
+
+WhatsApp will not work correctly in production if webhook jobs are never processed.
+
+For a first VPS launch:
+
+```env
+QUEUE_CONNECTION=database
+```
+
+Then:
+
+```bash
+php artisan queue:work --queue=default --tries=3 --timeout=120
+```
+
+Use Supervisor/systemd to keep the worker alive. See `docs/DEPLOYMENT.md` and `deploy/supervisor-worker.conf`.
+
+For higher scale, move queues/cache to Redis without changing the case model.
+
+## 5. First customer conversation
+
+A customer can simply send:
 
 ```text
-https://api.baskrwado.in/api/webhooks/whatsapp
+Hi
 ```
 
-The callback must be publicly reachable over HTTPS. Configure the same verify token in Meta and the backend environment.
-
-The backend validates `X-Hub-Signature-256` with the Meta App Secret in production and stores inbound message/status events idempotently.
-
-## 4. Subscribe the WABA
-
-Subscribe the WhatsApp Business Account to the app's webhooks. A WABA subscription is needed for the app to receive message events for its phone numbers.
-
-Start with message-related notifications. Store delivery/read/failure statuses because they matter for support quality and debugging.
-
-## 5. Conversation processing layer
-
-Do not implement business logic directly inside the webhook request.
-
-Recommended flow:
+If the intent is not yet clear, BasKarwaDo replies with the 7 service doors:
 
 ```text
-Meta webhook
- -> validate signature
- -> save WhatsAppEvent (idempotent)
- -> HTTP 200 immediately
- -> queued ProcessWhatsAppEvent job
- -> identify session/customer
- -> detect language + intent
- -> map to CaseRecord
- -> ask next workflow question
- -> save normalized answer
- -> refresh readiness report
- -> send reply through WhatsAppCloudService
+1. Paisa Wapas / Refund
+2. Product / Warranty
+3. PAN-Aadhaar / Document mismatch
+4. Address / House shift
+5. Marriage updates
+6. New baby documents
+7. Family / After-loss admin
 ```
 
-Production should run this processor on Redis/database queues with retries and dead-letter/failed-job monitoring.
-
-## 6. Language behaviour
-
-First interaction:
+The customer can also type a natural sentence such as:
 
 ```text
-Namaste 👋
-Choose your language:
-1. English
-2. हिंदी
-3. ગુજરાતી
+mara 4999 refund haju aavyo nathi
 ```
 
-After selection, preserve:
-- original customer text
-- detected/selected locale
-- normalized internal English field value where useful
-
-Support mixed writing naturally: Hinglish and Gujlish are common and should not force a language switch.
-
-## 7. First WhatsApp services
-
-Do not launch all seven flows on day one.
-
-Start with:
-
-1. Paisa Wapas
-2. After-Sales & Warranty
-3. Identity Repair
-
-Each begins conversationally, then asks deterministic required questions from the workflow definition.
-
-Example Paisa Wapas:
+The classifier maps it to:
 
 ```text
-Customer: Flipkart ka 4999 refund nahi aaya
-System extracts: merchant=Flipkart, amount=4999, intent=money_recovery
-Bot: Refund kab se pending hai?
-Customer: 14 din
-Bot: Order / refund screenshot bhej dijiye.
-...
-Bot: Case BKW-XXXX ready hai. Team review karegi.
+service_slug = money_recovery
+locale = gu
 ```
 
-## 8. WhatsApp Flows
+The case engine then asks the next required question instead of letting an LLM improvise the workflow.
 
-Use conversational chat for discovery and clarification. Use WhatsApp Flows only where structured collection is faster/cleaner, for example:
+## 6. Conversation state
 
-- travel refund details
-- product/warranty metadata
-- identity-mismatch record selection
-- move/address checklist
+Current session states include:
 
-A Flow should submit into the same Case API fields; it must not create a second data model.
+```text
+new
+awaiting_service
+collecting
+ready
+human_handoff
+```
 
-## 9. Media/documents
+Case workflow status is separate:
 
-When customers send images/PDFs:
+```text
+intake
+needs_info
+ready_for_review
+in_progress
+waiting_customer
+waiting_external
+resolved
+closed
+```
 
-1. receive the media reference in webhook data
-2. download server-side through the Cloud API
-3. malware/type/size check
-4. store in private encrypted object storage
-5. attach metadata to the case
-6. run OCR/classification asynchronously
-7. delete according to retention policy
+This separation matters: a WhatsApp conversation can be idle while the actual case is actively being processed by staff.
 
-Never use a publicly addressable `/uploads` directory for identity/bank/insurance documents.
+## 7. Language behaviour
 
-## 10. Templates and support window
+Customer-facing locales:
 
-Within WhatsApp's customer support window, free-form replies can be used according to current platform rules. For business-initiated messages outside the permitted window, use approved message templates. Build templates for:
+- English (`en`)
+- Hindi (`hi`)
+- Gujarati (`gu`)
 
-- case received
-- missing information reminder
-- case status changed
-- external response received
-- resolved / confirm outcome
-- consented follow-up
+The AI classifier also accepts mixed Hinglish / Gujlish. Original messages are preserved in the conversation audit. Structured case answers remain deterministic fields.
 
-Re-check Meta's current template, pricing and messaging rules before launch; these policies can change independently of the codebase.
+Customers can type at any time:
+
+```text
+EN
+HI
+GU
+```
+
+to switch the response language.
+
+## 8. Documents and screenshots
+
+Supported WhatsApp media in the current worker:
+
+- images
+- documents / PDF
+
+Flow:
+
+```text
+Meta sends media ID
+→ backend requests the media metadata URL
+→ backend downloads with the WhatsApp access token
+→ size/type checks
+→ private storage under the case
+→ SHA-256 hash
+→ `case_documents`
+→ queued AI extraction when configured
+→ human verification in admin console
+```
+
+The application does **not** create public document URLs.
+
+Never ask customers to send:
+
+- UPI PIN
+- ATM PIN
+- card CVV
+- netbanking password
+- email password
+- OTP
+
+If an official process needs customer authentication, guide the customer to complete it directly on the official interface.
+
+## 9. OpenAI in WhatsApp intake
+
+Configure server-side only:
+
+```env
+OPENAI_API_KEY=...
+OPENAI_MODEL=gpt-5-mini
+```
+
+The code uses the Responses API with `store=false` for BasKarwaDo case/document requests.
+
+AI responsibilities:
+
+- intent classification
+- language detection
+- document fact extraction
+- concise case summary
+- missing questions
+- operational next-step draft
+
+AI is **not** allowed to invent legal rights/deadlines or automatically make regulated/legal/financial conclusions. High-risk items stay human-reviewed.
+
+If OpenAI is not configured or temporarily unavailable, the deterministic case workflow and keyword classifier continue to work.
+
+## 10. Support window and templates
+
+Replies to a customer who is actively messaging can be sent as free-form messages according to Meta's current customer-service-window rules.
+
+For business-initiated messages outside the permitted window, create approved templates in WhatsApp Manager. Recommended template set:
+
+```text
+bkw_case_received
+bkw_missing_information
+bkw_case_status_changed
+bkw_external_response
+bkw_case_resolved
+```
+
+`WhatsAppCloudService::sendTemplate()` is already available; template names/languages/components should be configured after Meta approves the exact templates.
+
+Do not hard-code unapproved template text into production automation.
 
 ## 11. Human handoff
 
-Conversation state should support:
+The customer can type:
 
 ```text
-BOT_INTAKE
-WAITING_CUSTOMER
-READY_FOR_AGENT
-AGENT_ACTIVE
-WAITING_EXTERNAL
-RESOLVED
+human
+agent
 ```
 
-When `AGENT_ACTIVE`, automated conversational replies should pause except explicit system/status messages. The admin panel becomes the agent source of truth.
+The worker then:
 
-## 12. What must be added before production WhatsApp launch
+- sets the case to `ready_for_review`
+- raises priority to `high`
+- changes conversation state to `human_handoff`
+- records an audit event
+- confirms handoff to the customer
 
-- `whatsapp_sessions` model/table
-- queued `ProcessWhatsAppEvent` job
-- media download + private document model
-- language/intent extraction service
-- deterministic next-question resolver
-- agent send/reply endpoint
-- approved template sender
-- consent + opt-out handling
-- message/event audit trail
-- rate limiting and abuse controls
-- observability: webhook failures, queue depth, outbound errors
+The admin console becomes the source of truth for the case.
 
-The existing adapter intentionally stops before these pieces rather than pretending an untested chatbot is production-ready.
+## 12. WhatsApp Flows — optional enhancement
+
+The current product is fully usable with conversational questions; WhatsApp Flows are not required for the MVP.
+
+Add Flows later for data-heavy paths such as:
+
+- airline refund metadata
+- warranty/product metadata
+- document-mismatch checklists
+- address-change record selection
+
+A Flow must write to the same Case API fields. Never create a second workflow/data model for Flows.
+
+## 13. Production go-live checklist
+
+Before connecting the live business number:
+
+- [ ] production HTTPS domain deployed
+- [ ] `APP_DEBUG=false`
+- [ ] MySQL/PostgreSQL production DB backed up
+- [ ] queue worker supervised
+- [ ] private document storage backed up/encrypted at infrastructure level
+- [ ] Meta App Secret configured
+- [ ] production WhatsApp token configured
+- [ ] webhook verified and signed webhook tested
+- [ ] duplicate webhook delivery tested
+- [ ] image and PDF intake tested
+- [ ] Hindi / English / Gujarati path tested
+- [ ] approved outbound templates created
+- [ ] agent handoff tested
+- [ ] privacy/retention policy reviewed for production
+- [ ] legal/regulated partner boundaries reviewed
+- [ ] alerting for failed queue jobs / webhook failures enabled
+
+That is the WhatsApp production path for the code currently in this repository.
