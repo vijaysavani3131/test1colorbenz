@@ -107,11 +107,11 @@ VITE_WHATSAPP_NUMBER=91XXXXXXXXXX
 Build:
 
 ```bash
-npm ci
+npm install --no-audit --no-fund
 npm run build
 ```
 
-Serve the generated `dist/` directory through Nginx. The example config in `deploy/nginx-web.conf` includes SPA fallback to `index.html`.
+A lockfile is not currently committed, so do not use `npm ci` until the project adopts and commits one. Serve the generated `dist/` directory through Nginx. The example config in `deploy/nginx-web.conf` includes SPA fallback to `index.html`.
 
 ## 4. Backend Nginx / PHP-FPM
 
@@ -231,7 +231,7 @@ php artisan route:cache
 php artisan queue:restart
 
 # frontend
-npm ci
+npm install --no-audit --no-fund
 npm run build
 ```
 
