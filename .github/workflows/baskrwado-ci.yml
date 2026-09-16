@@ -36,16 +36,30 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.3'
+          extensions: mbstring, xml, curl, sqlite3, pdo_sqlite
           coverage: none
       - run: composer validate --strict
-      - run: composer install --no-interaction --prefer-dist
+      - name: Install Composer dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          composer install --no-interaction --prefer-dist -vvv 2>&1 | tee /tmp/baskrwado-composer.log
+      - name: Upload Composer diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baskrwado-composer-log
+          path: /tmp/baskrwado-composer.log
+          retention-days: 2
       - name: Prepare application
         run: |
           cp .env.example .env
           mkdir -p storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache database
           touch database/database.sqlite
           php artisan key:generate
-      - run: php artisan migrate --force
+      - run: php artisan migrate:fresh --force
       - run: php artisan route:list
       - name: PHP syntax check
-        run: find app bootstrap config database routes -name '*.php' -print0 | xargs -0 -n1 php -l
+        run: find app bootstrap config database routes tests -name '*.php' -print0 2>/dev/null | xargs -0 -r -n1 php -l
+      - name: Test suite
+        run: php artisan test
