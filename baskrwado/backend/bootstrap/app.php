@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\EnsureAdminAuth;
 use App\Http\Middleware\EnsureAdminKey;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -15,6 +16,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
+            'admin.auth' => EnsureAdminAuth::class,
             'admin.key' => EnsureAdminKey::class,
         ]);
     })
