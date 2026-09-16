@@ -11,6 +11,43 @@ on:
       - '.github/workflows/baskrwado-ci.yml'
 
 jobs:
+  bootstrap-lockfiles:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/feature/baskrwado-platform'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/baskrwado-platform
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, curl, sqlite3, pdo_sqlite
+          coverage: none
+      - name: Generate dependency lockfiles
+        run: |
+          cd baskrwado/frontend
+          npm install --package-lock-only --no-audit --no-fund
+          cd ../backend
+          mkdir -p bootstrap/cache storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs database
+          touch database/database.sqlite
+          composer install --no-interaction --prefer-dist
+      - name: Commit dependency lockfiles
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add baskrwado/frontend/package-lock.json baskrwado/backend/composer.lock
+          if git diff --cached --quiet; then
+            echo "Lockfiles already committed."
+            exit 0
+          fi
+          git commit -m "build: lock frontend and backend dependencies"
+          git push origin HEAD:feature/baskrwado-platform
+
   frontend:
     runs-on: ubuntu-latest
     defaults:
@@ -24,12 +61,6 @@ jobs:
           cache: 'npm'
           cache-dependency-path: baskrwado/frontend/package.json
       - run: npm install --no-audit --no-fund
-      - name: Upload resolved npm lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: baskrwado-package-lock
-          path: baskrwado/frontend/package-lock.json
-          retention-days: 1
       - run: npm run build
 
   backend:
@@ -54,12 +85,6 @@ jobs:
         run: |
           set -o pipefail
           composer install --no-interaction --prefer-dist -vvv 2>&1 | tee /tmp/baskrwado-composer.log
-      - name: Upload resolved Composer lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: baskrwado-composer-lock
-          path: baskrwado/backend/composer.lock
-          retention-days: 1
       - name: Upload Composer diagnostic log
         if: always()
         uses: actions/upload-artifact@v4
