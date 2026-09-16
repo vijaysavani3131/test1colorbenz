@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessWhatsAppEvent;
 use App\Models\WhatsAppEvent;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -37,7 +38,7 @@ class WhatsAppWebhookController extends Controller
                 foreach (($value['messages'] ?? []) as $message) {
                     $waId = (string) ($message['from'] ?? '');
                     $messageId = (string) ($message['id'] ?? '');
-                    WhatsAppEvent::query()->firstOrCreate(
+                    $record = WhatsAppEvent::query()->firstOrCreate(
                         ['event_key' => $messageId !== '' ? 'message:'.$messageId : hash('sha256', json_encode($message))],
                         [
                             'wa_id' => $waId,
@@ -50,11 +51,14 @@ class WhatsAppWebhookController extends Controller
                             ],
                         ]
                     );
+                    if ($record->wasRecentlyCreated) {
+                        ProcessWhatsAppEvent::dispatch($record->id);
+                    }
                 }
 
                 foreach (($value['statuses'] ?? []) as $status) {
                     $key = 'status:'.($status['id'] ?? '').':'.($status['status'] ?? '').':'.($status['timestamp'] ?? '');
-                    WhatsAppEvent::query()->firstOrCreate(
+                    $record = WhatsAppEvent::query()->firstOrCreate(
                         ['event_key' => $key],
                         [
                             'wa_id' => (string) ($status['recipient_id'] ?? ''),
@@ -63,11 +67,13 @@ class WhatsAppWebhookController extends Controller
                             'payload' => $status,
                         ]
                     );
+                    if ($record->wasRecentlyCreated) {
+                        ProcessWhatsAppEvent::dispatch($record->id);
+                    }
                 }
             }
         }
 
-        // Webhooks should acknowledge quickly. Conversation processing belongs in a queued job.
         return response()->json(['received' => true]);
     }
 
@@ -75,7 +81,6 @@ class WhatsAppWebhookController extends Controller
     {
         $secret = (string) config('services.whatsapp.app_secret');
         if ($secret === '') {
-            // Local development only. Production must configure the Meta App Secret.
             abort_if(app()->isProduction(), 503, 'WhatsApp app secret is not configured.');
             return;
         }
