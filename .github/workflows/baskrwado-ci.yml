@@ -1,0 +1,51 @@
+name: BasKarwaDo CI
+
+on:
+  pull_request:
+    paths:
+      - 'baskrwado/**'
+      - '.github/workflows/baskrwado-ci.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'baskrwado/**'
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: baskrwado/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: baskrwado/frontend/package.json
+      - run: npm install --no-audit --no-fund
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: baskrwado/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - run: composer validate --strict
+      - run: composer install --no-interaction --prefer-dist
+      - name: Prepare application
+        run: |
+          cp .env.example .env
+          mkdir -p storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache database
+          touch database/database.sqlite
+          php artisan key:generate
+      - run: php artisan migrate --force
+      - run: php artisan route:list
+      - name: PHP syntax check
+        run: find app bootstrap config database routes -name '*.php' -print0 | xargs -0 -n1 php -l
