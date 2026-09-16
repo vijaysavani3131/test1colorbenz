@@ -27,6 +27,26 @@ class AnalyzeCaseDocument implements ShouldQueue
             return;
         }
 
+        $supported = [
+            'application/pdf',
+            'image/jpeg',
+            'image/png',
+            'image/webp',
+        ];
+
+        if (!in_array(strtolower((string) $document->mime_type), $supported, true)) {
+            $document->forceFill(['status' => 'manual_review'])->save();
+            $workflow->recordEvent(
+                $document->caseRecord,
+                'document_manual_review',
+                'Unsupported document type queued for manual review: '.$document->original_name,
+                'system',
+                null,
+                ['document_id' => $document->id, 'mime_type' => $document->mime_type],
+            );
+            return;
+        }
+
         $result = $ai->analyzeDocument($document);
         if (!$result) {
             $document->forceFill(['status' => 'manual_review'])->save();
