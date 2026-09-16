@@ -103,6 +103,8 @@ baskrwado/
     supervisor-worker.conf
 ```
 
+Frontend and backend dependency lockfiles are committed so CI and production installs use the same tested dependency graph.
+
 ## Local development
 
 ### Backend
@@ -134,7 +136,7 @@ For production use `database` or Redis and a supervised worker.
 ```bash
 cd baskrwado/frontend
 cp .env.example .env
-npm install
+npm ci
 npm run dev
 ```
 
@@ -190,12 +192,12 @@ http://localhost:8000/api/webhooks/razorpay
 
 GitHub Actions runs:
 
-- React production build
-- Composer validation/install
+- locked React dependency install + production build
+- locked Composer validation/install
 - Laravel fresh SQLite migrations
 - Laravel route boot
 - PHP syntax checks
-- backend feature test suite
+- backend unit + feature test suite
 
 Locally:
 
@@ -204,6 +206,7 @@ cd baskrwado/backend
 php artisan test
 
 cd ../frontend
+npm ci
 npm run build
 ```
 
