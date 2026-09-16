@@ -38,6 +38,10 @@ jobs:
           php-version: '8.3'
           extensions: mbstring, xml, curl, sqlite3, pdo_sqlite
           coverage: none
+      - name: Prepare writable Laravel directories
+        run: |
+          mkdir -p bootstrap/cache storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs database
+          touch database/database.sqlite
       - run: composer validate --strict
       - name: Install Composer dependencies
         shell: bash
@@ -54,8 +58,6 @@ jobs:
       - name: Prepare application
         run: |
           cp .env.example .env
-          mkdir -p storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache database
-          touch database/database.sqlite
           php artisan key:generate
       - run: php artisan migrate:fresh --force
       - run: php artisan route:list
