@@ -11,10 +11,17 @@ use Illuminate\Validation\Rule;
 
 class AdminStaffController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        /** @var AdminUser $actor */
+        $actor = $request->attributes->get('admin_user');
+        $query = AdminUser::query()->orderBy('name');
+        if (!$actor->canManageStaff()) {
+            $query->whereKey($actor->id);
+        }
+
         return response()->json([
-            'data' => AdminUser::query()->orderBy('name')->get()->map(fn (AdminUser $user) => [
+            'data' => $query->get()->map(fn (AdminUser $user) => [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
