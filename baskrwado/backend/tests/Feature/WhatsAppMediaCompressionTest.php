@@ -76,7 +76,12 @@ class WhatsAppMediaCompressionTest extends TestCase
                 'file_size' => strlen($bytes),
                 'sha256' => hash('sha256', $bytes),
             ]);
-        $whatsapp->method('sendText')->willReturn(['messages' => [['id' => 'wamid.out']]]);
+
+        $outgoingId = 0;
+        $whatsapp->method('sendText')->willReturnCallback(function () use (&$outgoingId): array {
+            $outgoingId++;
+            return ['messages' => [['id' => 'wamid.out-'.$outgoingId]]];
+        });
 
         (new ProcessWhatsAppEvent($event->id))->handle(
             $whatsapp,
