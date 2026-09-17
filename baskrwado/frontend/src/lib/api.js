@@ -30,6 +30,14 @@ function queryString(params = {}) {
   return value ? `?${value}` : '';
 }
 
+async function adminBlob(path, fallbackMessage) {
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  });
+  if (!response.ok) throw new Error(fallbackMessage);
+  return response.blob();
+}
+
 export const api = {
   services: () => request('/services'),
   createCase: (payload) => request('/cases', { method: 'POST', body: JSON.stringify(payload) }),
@@ -74,12 +82,18 @@ export const api = {
   adminVerifyDocument: (documentId, status) => request(`/admin/documents/${documentId}/verify`, {
     method: 'PATCH', admin: true, body: JSON.stringify({ status }),
   }),
+  adminViewDocument: async (documentId) => {
+    const blob = await adminBlob(`/admin/documents/${documentId}/view`, 'Unable to view document.');
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank', 'noopener,noreferrer');
+    if (!win) {
+      URL.revokeObjectURL(url);
+      throw new Error('Popup blocked. Please allow popups to view this document.');
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  },
   adminDownloadDocument: async (documentId, filename = 'document') => {
-    const response = await fetch(`${API_URL}/admin/documents/${documentId}/download`, {
-      headers: { Authorization: `Bearer ${adminToken()}` },
-    });
-    if (!response.ok) throw new Error('Unable to download document.');
-    const blob = await response.blob();
+    const blob = await adminBlob(`/admin/documents/${documentId}/download`, 'Unable to download document.');
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
