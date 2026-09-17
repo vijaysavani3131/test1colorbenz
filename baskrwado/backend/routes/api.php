@@ -35,6 +35,9 @@ Route::prefix('/admin')->group(function (): void {
         Route::get('/auth/me', [AdminAuthController::class, 'me']);
         Route::post('/auth/logout', [AdminAuthController::class, 'logout']);
         Route::patch('/profile', [AdminProfileController::class, 'update']);
+        Route::post('/profile/avatar', [AdminProfileController::class, 'avatar']);
+        Route::get('/profile/avatar', [AdminProfileController::class, 'avatarView']);
+        Route::delete('/profile/avatar', [AdminProfileController::class, 'removeAvatar']);
         Route::patch('/profile/password', [AdminProfileController::class, 'password']);
         Route::patch('/profile/notification-preferences', [AdminProfileController::class, 'preferences']);
 
