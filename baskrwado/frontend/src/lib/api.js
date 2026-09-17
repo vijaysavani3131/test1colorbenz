@@ -30,6 +30,80 @@ function queryString(params = {}) {
   return value ? `?${value}` : '';
 }
 
+const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const TARGET_IMAGE_BYTES = 300 * 1024;
+
+async function loadBitmap(file) {
+  if ('createImageBitmap' in window) return createImageBitmap(file);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Unable to read image.')); };
+    img.src = url;
+  });
+}
+
+function canvasBlob(canvas, type, quality) {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+async function optimizeImage(file) {
+  if (!IMAGE_TYPES.has(file.type) || file.size <= TARGET_IMAGE_BYTES) return file;
+
+  const bitmap = await loadBitmap(file);
+  let width = bitmap.width;
+  let height = bitmap.height;
+  const maxEdge = 1800;
+  if (Math.max(width, height) > maxEdge) {
+    const scale = maxEdge / Math.max(width, height);
+    width = Math.max(1, Math.round(width * scale));
+    height = Math.max(1, Math.round(height * scale));
+  }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d', { alpha: true });
+  let best = null;
+  const outputType = file.type === 'image/png' ? 'image/webp' : file.type;
+
+  for (let pass = 0; pass < 10; pass += 1) {
+    canvas.width = width;
+    canvas.height = height;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(bitmap, 0, 0, width, height);
+
+    for (const quality of [0.92, 0.86, 0.8, 0.74, 0.68, 0.62, 0.56, 0.5]) {
+      const blob = await canvasBlob(canvas, outputType, quality);
+      if (!blob) continue;
+      if (!best || blob.size < best.size) best = blob;
+      if (blob.size <= TARGET_IMAGE_BYTES) {
+        if (bitmap.close) bitmap.close();
+        const base = file.name.replace(/\.[^.]+$/, '');
+        const ext = outputType === 'image/webp' ? 'webp' : 'jpg';
+        return new File([blob], `${base}.${ext}`, { type: outputType, lastModified: Date.now() });
+      }
+    }
+
+    if (Math.max(width, height) <= 640) break;
+    width = Math.max(480, Math.round(width * 0.86));
+    height = Math.max(480, Math.round(height * 0.86));
+  }
+
+  if (bitmap.close) bitmap.close();
+  if (!best || best.size >= file.size) return file;
+  const base = file.name.replace(/\.[^.]+$/, '');
+  const ext = outputType === 'image/webp' ? 'webp' : 'jpg';
+  return new File([best], `${base}.${ext}`, { type: outputType, lastModified: Date.now() });
+}
+
+async function authenticatedBlob(path) {
+  const response = await fetch(`${API_URL}${path}`, {
+    headers: { Authorization: `Bearer ${adminToken()}` },
+  });
+  if (!response.ok) throw new Error('Unable to load document.');
+  return response.blob();
+}
+
 export const api = {
   services: () => request('/services'),
   createCase: (payload) => request('/cases', { method: 'POST', body: JSON.stringify(payload) }),
@@ -37,11 +111,12 @@ export const api = {
     method: 'POST',
     body: JSON.stringify({ phone, answers }),
   }),
-  uploadDocument: (publicId, phone, file, category = 'evidence') => {
+  uploadDocument: async (publicId, phone, file, category = 'evidence') => {
+    const optimized = await optimizeImage(file);
     const form = new FormData();
     form.append('phone', phone);
     form.append('category', category);
-    form.append('file', file);
+    form.append('file', optimized);
     return request(`/cases/${encodeURIComponent(publicId)}/documents`, { method: 'POST', body: form });
   },
   trackCase: (publicId, phone) => request(`/cases/${encodeURIComponent(publicId)}?phone=${encodeURIComponent(phone)}`),
@@ -74,12 +149,14 @@ export const api = {
   adminVerifyDocument: (documentId, status) => request(`/admin/documents/${documentId}/verify`, {
     method: 'PATCH', admin: true, body: JSON.stringify({ status }),
   }),
+  adminViewDocument: async (documentId) => {
+    const blob = await authenticatedBlob(`/admin/documents/${documentId}/view`);
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  },
   adminDownloadDocument: async (documentId, filename = 'document') => {
-    const response = await fetch(`${API_URL}/admin/documents/${documentId}/download`, {
-      headers: { Authorization: `Bearer ${adminToken()}` },
-    });
-    if (!response.ok) throw new Error('Unable to download document.');
-    const blob = await response.blob();
+    const blob = await authenticatedBlob(`/admin/documents/${documentId}/download`);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
