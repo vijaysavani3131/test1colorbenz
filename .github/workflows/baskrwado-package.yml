@@ -1,0 +1,33 @@
+name: BasKarwaDo Package
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/baskrwado-package.yml'
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create deployment package
+        run: |
+          mkdir -p release
+          cp -a baskrwado release/BasKarwaDo
+          cat > release/BasKarwaDo/DEPLOYMENT-TARGET.txt <<'EOF'
+          Target domain: https://baskarwado.isavgo.com
+          Recommended API domain: https://api.baskarwado.isavgo.com
+
+          Do not store production secrets in this ZIP. Configure them in the backend .env on the server.
+          See docs/DEPLOYMENT.md and docs/WHATSAPP-ROLLOUT.md before launch.
+          EOF
+      - name: Upload BasKarwaDo project
+        uses: actions/upload-artifact@v4
+        with:
+          name: BasKarwaDo-Complete-Project
+          path: release/BasKarwaDo
+          retention-days: 2
+          if-no-files-found: error
