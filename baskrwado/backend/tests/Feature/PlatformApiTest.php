@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AdminUser;
+use App\Models\CaseRecord;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -135,5 +136,40 @@ class PlatformApiTest extends TestCase
 
         $this->withToken($token)->getJson('/api/admin/notifications')->assertOk();
         $this->withToken($token)->getJson('/api/admin/staff')->assertOk();
+    }
+
+    public function test_agents_only_see_assigned_cases_and_cannot_view_team_directory(): void
+    {
+        $owner = AdminUser::create([
+            'name' => 'Owner', 'email' => 'owner2@example.com', 'password' => 'a-strong-password',
+            'role' => 'owner', 'active' => true,
+        ]);
+        $agent = AdminUser::create([
+            'name' => 'Agent', 'email' => 'agent2@example.com', 'password' => 'a-strong-password',
+            'role' => 'agent', 'active' => true,
+        ]);
+
+        $assigned = CaseRecord::create([
+            'service_slug' => 'money_recovery', 'source' => 'web', 'locale' => 'en',
+            'name' => 'Assigned Customer', 'phone' => '9000000001', 'status' => 'intake',
+            'assigned_admin_user_id' => $agent->id,
+        ]);
+        $other = CaseRecord::create([
+            'service_slug' => 'money_recovery', 'source' => 'web', 'locale' => 'en',
+            'name' => 'Other Customer', 'phone' => '9000000002', 'status' => 'intake',
+            'assigned_admin_user_id' => $owner->id,
+        ]);
+
+        $agentToken = $this->postJson('/api/admin/auth/login', [
+            'email' => 'agent2@example.com', 'password' => 'a-strong-password',
+        ])->assertOk()->json('token');
+
+        $this->withToken($agentToken)->getJson('/api/admin/staff')->assertForbidden();
+        $this->withToken($agentToken)->getJson('/api/admin/cases')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.public_id', $assigned->public_id)
+            ->assertJsonPath('meta.scope', 'assigned');
+        $this->withToken($agentToken)->getJson('/api/admin/cases/'.$other->public_id)->assertNotFound();
     }
 }
