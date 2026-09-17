@@ -4,6 +4,8 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import './styles.css';
 import './admin-fixed-sidebar.css';
+import './admin-utility-bar.css';
+import './admin-utility-bar.js';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
