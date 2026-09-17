@@ -9,8 +9,9 @@ use Illuminate\Support\Facades\Hash;
 class AdminUser extends Model
 {
     protected $fillable = [
-        'name', 'email', 'phone', 'job_title', 'password', 'role', 'active',
-        'timezone', 'notification_preferences', 'last_login_at',
+        'name', 'email', 'phone', 'job_title', 'department', 'password', 'role', 'active',
+        'timezone', 'language', 'bio', 'avatar_path', 'avatar_mime',
+        'notification_preferences', 'last_login_at',
     ];
 
     protected $hidden = ['password'];
