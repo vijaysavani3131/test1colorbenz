@@ -6,11 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\CaseRecord;
 use App\Models\Payment;
 use App\Models\WebhookEvent;
+use App\Services\AdminNotificationService;
 use App\Services\CaseWorkflowService;
 use App\Services\RazorpayService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Str;
 
 class PaymentController extends Controller
 {
@@ -45,8 +45,12 @@ class PaymentController extends Controller
         ]);
     }
 
-    public function verify(Request $request, RazorpayService $razorpay, CaseWorkflowService $workflow): JsonResponse
-    {
+    public function verify(
+        Request $request,
+        RazorpayService $razorpay,
+        CaseWorkflowService $workflow,
+        AdminNotificationService $notifications,
+    ): JsonResponse {
         $validated = $request->validate([
             'public_id' => ['required', 'string', 'max:30'],
             'razorpay_order_id' => ['required', 'string', 'max:120'],
@@ -58,12 +62,16 @@ class PaymentController extends Controller
         abort_unless($payment->caseRecord && $payment->caseRecord->public_id === strtoupper($validated['public_id']), 403, 'Payment does not belong to this case.');
         abort_unless($razorpay->verifyCheckoutSignature($validated['razorpay_order_id'], $validated['razorpay_payment_id'], $validated['razorpay_signature']), 422, 'Payment signature verification failed.');
 
-        $this->markPaid($payment, $validated['razorpay_payment_id'], $workflow);
+        $this->markPaid($payment, $validated['razorpay_payment_id'], $workflow, $notifications);
         return response()->json(['message' => 'Payment verified.', 'payment_status' => 'paid']);
     }
 
-    public function webhook(Request $request, RazorpayService $razorpay, CaseWorkflowService $workflow): JsonResponse
-    {
+    public function webhook(
+        Request $request,
+        RazorpayService $razorpay,
+        CaseWorkflowService $workflow,
+        AdminNotificationService $notifications,
+    ): JsonResponse {
         $raw = $request->getContent();
         abort_unless($razorpay->verifyWebhookSignature($raw, (string) $request->header('X-Razorpay-Signature')), 401, 'Invalid webhook signature.');
 
@@ -83,7 +91,7 @@ class PaymentController extends Controller
         if ($orderId !== '' && in_array($payload['event'] ?? '', ['order.paid', 'payment.captured'], true)) {
             $payment = Payment::query()->with('caseRecord')->where('provider_order_id', $orderId)->first();
             if ($payment) {
-                $this->markPaid($payment, $paymentId, $workflow);
+                $this->markPaid($payment, $paymentId, $workflow, $notifications);
             }
         }
 
@@ -91,8 +99,12 @@ class PaymentController extends Controller
         return response()->json(['received' => true]);
     }
 
-    private function markPaid(Payment $payment, string $paymentId, CaseWorkflowService $workflow): void
-    {
+    private function markPaid(
+        Payment $payment,
+        string $paymentId,
+        CaseWorkflowService $workflow,
+        AdminNotificationService $notifications,
+    ): void {
         if ($payment->status === 'paid') {
             return;
         }
@@ -107,6 +119,12 @@ class PaymentController extends Controller
         if ($case) {
             $case->forceFill(['payment_status' => 'paid', 'last_activity_at' => now()])->save();
             $workflow->recordEvent($case, 'payment_received', 'Payment received and verified.', 'system', null, ['payment_id' => $payment->id]);
+            $notifications->notifyOwnersAndAdmins(
+                'payment_received',
+                'Payment received: '.$case->public_id,
+                '₹'.number_format($payment->amount_paise / 100, 0).' received for '.$case->public_id.'.',
+                ['public_id' => $case->public_id, 'payment_id' => $payment->id],
+            );
         }
     }
 
