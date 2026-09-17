@@ -1,0 +1,28 @@
+DirectoryIndex index.html
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Let cPanel/AutoSSL certificate challenges pass through untouched.
+    RewriteRule ^\.well-known/ - [L]
+
+    # Never allow the Laravel/React source trees to be requested directly.
+    RewriteRule ^(?:backend|frontend|deploy|docs)(?:/|$) - [F,L,NC]
+
+    # api.php is an internal bridge only. Block direct browser requests to it.
+    RewriteCond %{THE_REQUEST} \s/+api\.php(?:[\s?]|$) [NC]
+    RewriteRule ^api\.php$ - [F,L]
+
+    # Same-domain Laravel endpoints. REQUEST_URI remains /api/... or /up,
+    # so Laravel receives the routes exactly as defined by the application.
+    RewriteRule ^(?:api(?:/.*)?|up)$ api.php [L,QSA]
+
+    # Serve real frontend files (assets, favicon, etc.) directly.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # React Router / SPA fallback.
+    RewriteRule ^ index.html [L]
+</IfModule>
