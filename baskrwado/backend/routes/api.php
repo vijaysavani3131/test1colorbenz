@@ -51,6 +51,7 @@ Route::prefix('/admin')->group(function (): void {
         Route::post('/staff', [AdminStaffController::class, 'store']);
         Route::patch('/staff/{staffId}', [AdminStaffController::class, 'update']);
 
+        Route::get('/documents/{documentId}/view', [AdminDocumentController::class, 'view']);
         Route::get('/documents/{documentId}/download', [AdminDocumentController::class, 'download']);
         Route::patch('/documents/{documentId}/verify', [AdminDocumentController::class, 'verify']);
     });
