@@ -3,6 +3,8 @@
 use App\Http\Controllers\Api\AdminAuthController;
 use App\Http\Controllers\Api\AdminCaseController;
 use App\Http\Controllers\Api\AdminDocumentController;
+use App\Http\Controllers\Api\AdminNotificationController;
+use App\Http\Controllers\Api\AdminProfileController;
 use App\Http\Controllers\Api\AdminStaffController;
 use App\Http\Controllers\Api\CaseController;
 use App\Http\Controllers\Api\CaseDocumentController;
@@ -32,6 +34,13 @@ Route::prefix('/admin')->group(function (): void {
     Route::middleware(['admin.auth', 'throttle:180,1'])->group(function (): void {
         Route::get('/auth/me', [AdminAuthController::class, 'me']);
         Route::post('/auth/logout', [AdminAuthController::class, 'logout']);
+        Route::patch('/profile', [AdminProfileController::class, 'update']);
+        Route::patch('/profile/password', [AdminProfileController::class, 'password']);
+        Route::patch('/profile/notification-preferences', [AdminProfileController::class, 'preferences']);
+
+        Route::get('/notifications', [AdminNotificationController::class, 'index']);
+        Route::post('/notifications/read-all', [AdminNotificationController::class, 'readAll']);
+        Route::post('/notifications/{notificationId}/read', [AdminNotificationController::class, 'read']);
 
         Route::get('/cases', [AdminCaseController::class, 'index']);
         Route::get('/cases/{publicId}', [AdminCaseController::class, 'show']);
@@ -40,6 +49,7 @@ Route::prefix('/admin')->group(function (): void {
 
         Route::get('/staff', [AdminStaffController::class, 'index']);
         Route::post('/staff', [AdminStaffController::class, 'store']);
+        Route::patch('/staff/{staffId}', [AdminStaffController::class, 'update']);
 
         Route::get('/documents/{documentId}/download', [AdminDocumentController::class, 'download']);
         Route::patch('/documents/{documentId}/verify', [AdminDocumentController::class, 'verify']);
