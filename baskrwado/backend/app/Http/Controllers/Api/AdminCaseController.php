@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\CaseNote;
 use App\Models\CaseRecord;
+use App\Services\AdminNotificationService;
 use App\Services\CaseWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -58,7 +59,7 @@ class AdminCaseController extends Controller
     {
         $case = CaseRecord::query()
             ->with([
-                'answers', 'documents', 'events', 'notes.adminUser', 'payments', 'assignee',
+                'answers', 'documents', 'events', 'notes.adminUser', 'payments', 'assignee', 'consent',
                 'conversations' => fn ($q) => $q->with(['messages' => fn ($m) => $m->latest()->limit(50)]),
             ])
             ->where('public_id', strtoupper($publicId))
@@ -67,8 +68,12 @@ class AdminCaseController extends Controller
         return response()->json(['data' => $this->detail($case, $workflow)]);
     }
 
-    public function update(Request $request, string $publicId, CaseWorkflowService $workflow): JsonResponse
-    {
+    public function update(
+        Request $request,
+        string $publicId,
+        CaseWorkflowService $workflow,
+        AdminNotificationService $notifications,
+    ): JsonResponse {
         $validated = $request->validate([
             'status' => ['nullable', Rule::in(['intake','needs_info','ready_for_review','in_progress','waiting_customer','waiting_external','resolved','closed'])],
             'priority' => ['nullable', Rule::in(['low','normal','high','urgent'])],
@@ -94,6 +99,30 @@ class AdminCaseController extends Controller
             'before' => $before,
             'after' => $case->only(['status','priority','assigned_admin_user_id','fee_paise']),
         ]);
+
+        if (array_key_exists('assigned_admin_user_id', $validated)
+            && (int) ($before['assigned_admin_user_id'] ?? 0) !== (int) ($case->assigned_admin_user_id ?? 0)
+            && $case->assigned_admin_user_id) {
+            $assignee = $case->assignee()->first();
+            if ($assignee) {
+                $notifications->notify(
+                    $assignee,
+                    'assigned_case',
+                    'Case assigned: '.$case->public_id,
+                    $admin->name.' assigned '.$case->public_id.' to you.',
+                    ['public_id' => $case->public_id],
+                );
+            }
+        }
+
+        if (($validated['priority'] ?? null) === 'urgent' && ($before['priority'] ?? null) !== 'urgent') {
+            $notifications->notifyOwnersAndAdmins(
+                'urgent_case',
+                'Urgent case '.$case->public_id,
+                $admin->name.' marked '.$case->public_id.' as urgent.',
+                ['public_id' => $case->public_id],
+            );
+        }
 
         return $this->show($publicId, $workflow);
     }
@@ -138,6 +167,12 @@ class AdminCaseController extends Controller
         return $this->row($case, $workflow) + [
             'metadata' => $case->metadata,
             'ai_report' => $case->ai_report,
+            'consent' => $case->consent ? [
+                'version' => $case->consent->consent_version,
+                'accepted_at' => $case->consent->accepted_at?->toIso8601String(),
+                'source' => $case->consent->source,
+                'text_hash' => $case->consent->consent_text_hash,
+            ] : null,
             'answers' => $case->answers->mapWithKeys(fn ($answer) => [$answer->key => $answer->value]),
             'documents' => $case->documents->map(fn ($doc) => [
                 'id' => $doc->id,
