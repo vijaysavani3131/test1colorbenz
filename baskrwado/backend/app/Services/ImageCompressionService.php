@@ -4,33 +4,44 @@ namespace App\Services;
 
 class ImageCompressionService
 {
-    public const TARGET_BYTES = 307200;
+    public const TARGET_BYTES = 307200; // ~300 KB
 
     /**
-     * Best-effort compression for JPG/PNG/WebP evidence.
-     * Returns the original bytes unchanged when GD is unavailable or decoding fails.
+     * Best-effort evidence-image optimisation.
+     *
+     * The target is ~300 KB, but readability wins over a hard byte cap. We keep
+     * JPEG/WebP quality at 80+ and do not convert PNG/PDF into a different format.
+     * If GD is unavailable or the image cannot be decoded, original bytes are kept.
      */
     public function compress(string $bytes, string $mime, int $targetBytes = self::TARGET_BYTES): array
     {
         $mime = strtolower(trim($mime));
+        $originalSize = strlen($bytes);
+
+        if ($originalSize <= $targetBytes) {
+            return $this->result($bytes, $mime, false, $originalSize, true);
+        }
+
         if (!in_array($mime, ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'], true)
             || !function_exists('imagecreatefromstring')) {
-            return $this->result($bytes, $mime, false);
+            return $this->result($bytes, $mime, false, $originalSize, $originalSize <= $targetBytes);
         }
 
         $source = @imagecreatefromstring($bytes);
         if (!$source) {
-            return $this->result($bytes, $mime, false);
+            return $this->result($bytes, $mime, false, $originalSize, false);
         }
 
         $width = imagesx($source);
         $height = imagesy($source);
         $best = $bytes;
-        $bestSize = strlen($bytes);
-        $compressed = false;
+        $bestSize = $originalSize;
 
-        $maxDimensions = [2200, 1800, 1500, 1280, 1100, 960, 840, 720];
-        $qualities = [86, 82, 78, 74, 72];
+        // Do not collapse evidence to tiny dimensions. 960px is the safety floor.
+        $maxDimensions = [2400, 2100, 1800, 1600, 1440, 1280, 1120, 960];
+        // Quality floor protects text/screenshots from becoming visibly damaged.
+        $qualities = [90, 86, 83, 80];
+        $targetMet = false;
 
         foreach ($maxDimensions as $maxDimension) {
             $scale = min(1, $maxDimension / max($width, $height));
@@ -55,10 +66,10 @@ class ImageCompressionService
                 if ($candidate !== null && strlen($candidate) < $bestSize) {
                     $best = $candidate;
                     $bestSize = strlen($candidate);
-                    $compressed = true;
                 }
                 imagedestroy($canvas);
                 if ($bestSize <= $targetBytes) {
+                    $targetMet = true;
                     break;
                 }
                 continue;
@@ -72,17 +83,29 @@ class ImageCompressionService
                 if ($candidate !== null && strlen($candidate) < $bestSize) {
                     $best = $candidate;
                     $bestSize = strlen($candidate);
-                    $compressed = true;
                 }
+
                 if ($bestSize <= $targetBytes) {
-                    break 2;
+                    $targetMet = true;
+                    break;
                 }
             }
+
             imagedestroy($canvas);
+            if ($targetMet) {
+                break;
+            }
         }
 
         imagedestroy($source);
-        return $this->result($best, $mime, $compressed);
+
+        return $this->result(
+            $best,
+            $mime,
+            $bestSize < $originalSize,
+            $originalSize,
+            $bestSize <= $targetBytes,
+        );
     }
 
     private function encodeJpeg($image, int $quality): ?string
@@ -118,13 +141,20 @@ class ImageCompressionService
         return $ok && is_string($bytes) ? $bytes : null;
     }
 
-    private function result(string $bytes, string $mime, bool $compressed): array
-    {
+    private function result(
+        string $bytes,
+        string $mime,
+        bool $compressed,
+        int $originalSize,
+        bool $targetMet,
+    ): array {
         return [
             'bytes' => $bytes,
             'mime' => $mime,
             'size_bytes' => strlen($bytes),
+            'original_size_bytes' => $originalSize,
             'compressed' => $compressed,
+            'target_met' => $targetMet,
         ];
     }
 }
