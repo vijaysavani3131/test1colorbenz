@@ -35,6 +35,20 @@ The existing backend should remain at:
 
 `api.php` internally loads `backend/public/index.php`. The root `.htaccess` blocks direct browser requests to `backend/`, `frontend/`, `deploy/`, and `docs/`.
 
+## PHP extensions
+
+For normal Laravel operation enable the standard PHP extensions required by Composer/Laravel. For BasKarwaDo evidence-image optimisation, enable **GD** in cPanel's PHP extension selector.
+
+Verify from Terminal:
+
+```bash
+php -m | grep -i '^gd$'
+```
+
+If `gd` is printed, upload compression is active. If GD is unavailable, uploads still work and the backend safely keeps the original image instead of failing the case.
+
+The image optimiser targets roughly 300 KB for JPG/PNG/WebP evidence while preserving a quality/readability floor. The byte target is best-effort: when reaching 300 KB would make evidence unreadable, the safest smaller copy is retained instead. PDFs are not lossy-compressed.
+
 ## Backend .env
 
 Use one domain for both the website and API:
