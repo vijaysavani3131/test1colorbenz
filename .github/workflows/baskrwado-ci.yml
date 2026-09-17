@@ -1,0 +1,67 @@
+name: BasKarwaDo CI
+
+on:
+  pull_request:
+    paths:
+      - 'baskrwado/**'
+      - '.github/workflows/baskrwado-ci.yml'
+  push:
+    paths:
+      - 'baskrwado/**'
+      - '.github/workflows/baskrwado-ci.yml'
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: baskrwado/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: baskrwado/frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: baskrwado/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, curl, sqlite3, pdo_sqlite
+          coverage: none
+      - name: Prepare writable Laravel directories
+        run: |
+          mkdir -p bootstrap/cache storage/app/private storage/app/public storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs database
+          touch database/database.sqlite
+      - run: composer validate --strict
+      - name: Install locked Composer dependencies
+        shell: bash
+        run: |
+          set -o pipefail
+          composer install --no-interaction --prefer-dist --no-progress -vvv 2>&1 | tee /tmp/baskrwado-composer.log
+      - name: Upload Composer diagnostic log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: baskrwado-composer-log
+          path: /tmp/baskrwado-composer.log
+          retention-days: 2
+      - name: Prepare application
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+      - run: php artisan migrate:fresh --force
+      - run: php artisan route:list
+      - name: PHP syntax check
+        run: find app bootstrap config database routes tests -name '*.php' -print0 2>/dev/null | xargs -0 -r -n1 php -l
+      - name: Test suite
+        run: php artisan test

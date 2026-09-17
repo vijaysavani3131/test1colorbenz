@@ -1,0 +1,23 @@
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Laravel
+backend/vendor/
+backend/.env
+backend/database/*.sqlite
+backend/storage/app/private/*
+backend/storage/app/public/*
+backend/storage/framework/cache/*
+backend/storage/framework/sessions/*
+backend/storage/framework/views/*
+backend/storage/logs/*
+backend/bootstrap/cache/*
+
+# Keep directories if added later
+!.gitignore
+
+.DS_Store
+.idea/
+.vscode/
