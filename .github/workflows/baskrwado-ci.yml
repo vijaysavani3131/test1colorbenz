@@ -103,19 +103,21 @@ jobs:
         env:
           VITE_API_URL: /api
         run: npm run build
-      - name: Create cPanel-ready package
+      - name: Create cPanel-ready deploy package
         run: |
           rm -rf /tmp/BasKarwaDo-cPanel
           mkdir -p /tmp/BasKarwaDo-cPanel
           cp -a baskrwado/frontend/dist/. /tmp/BasKarwaDo-cPanel/
           cp baskrwado/deploy/cpanel-root.htaccess /tmp/BasKarwaDo-cPanel/.htaccess
           cp baskrwado/deploy/cpanel-api.php /tmp/BasKarwaDo-cPanel/api.php
+          cp -a baskrwado/backend /tmp/BasKarwaDo-cPanel/backend
+          rm -f /tmp/BasKarwaDo-cPanel/backend/.env
           cp baskrwado/docs/CPANEL-SAME-DOMAIN.md /tmp/BasKarwaDo-cPanel/DEPLOYMENT.md
           cd /tmp/BasKarwaDo-cPanel
-          zip -qr /tmp/BasKarwaDo-cPanel-Frontend-Ready.zip .
-      - name: Upload cPanel-ready frontend ZIP
+          zip -qr /tmp/BasKarwaDo-cPanel-Deploy-Ready.zip .
+      - name: Upload cPanel-ready deploy ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: BasKarwaDo-cPanel-Frontend-Ready
-          path: /tmp/BasKarwaDo-cPanel-Frontend-Ready.zip
+          name: BasKarwaDo-cPanel-Deploy-Ready
+          path: /tmp/BasKarwaDo-cPanel-Deploy-Ready.zip
           retention-days: 7
