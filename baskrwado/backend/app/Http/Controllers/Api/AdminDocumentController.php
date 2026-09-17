@@ -11,9 +11,9 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AdminDocumentController extends Controller
 {
-    public function download(int $documentId): StreamedResponse
+    public function download(Request $request, int $documentId): StreamedResponse
     {
-        $document = CaseDocument::query()->findOrFail($documentId);
+        $document = $this->visibleDocument($request, $documentId);
         abort_unless(Storage::disk($document->storage_disk)->exists($document->storage_path), 404, 'Document file not found.');
 
         return Storage::disk($document->storage_disk)->download($document->storage_path, $document->original_name, [
@@ -22,13 +22,31 @@ class AdminDocumentController extends Controller
         ]);
     }
 
+    public function view(Request $request, int $documentId): StreamedResponse
+    {
+        $document = $this->visibleDocument($request, $documentId);
+        abort_unless(Storage::disk($document->storage_disk)->exists($document->storage_path), 404, 'Document file not found.');
+
+        return Storage::disk($document->storage_disk)->response(
+            $document->storage_path,
+            $document->original_name,
+            [
+                'Content-Type' => $document->mime_type,
+                'Content-Disposition' => 'inline; filename="'.addslashes($document->original_name).'"',
+                'Cache-Control' => 'private, no-store, max-age=0',
+                'X-Content-Type-Options' => 'nosniff',
+            ],
+        );
+    }
+
     public function verify(Request $request, int $documentId, CaseWorkflowService $workflow)
     {
         $validated = $request->validate([
             'status' => ['required', 'in:verified,rejected,manual_review'],
         ]);
 
-        $document = CaseDocument::query()->with('caseRecord')->findOrFail($documentId);
+        $document = $this->visibleDocument($request, $documentId);
+        $document->load('caseRecord');
         $admin = $request->attributes->get('admin_user');
         $document->forceFill([
             'status' => $validated['status'],
@@ -41,5 +59,17 @@ class AdminDocumentController extends Controller
         }
 
         return response()->json(['message' => 'Document status updated.']);
+    }
+
+    private function visibleDocument(Request $request, int $documentId): CaseDocument
+    {
+        $admin = $request->attributes->get('admin_user');
+        $query = CaseDocument::query()->with('caseRecord')->whereKey($documentId);
+
+        if (!in_array($admin->role, ['owner', 'admin'], true)) {
+            $query->whereHas('caseRecord', fn ($q) => $q->where('assigned_admin_user_id', $admin->id));
+        }
+
+        return $query->firstOrFail();
     }
 }
