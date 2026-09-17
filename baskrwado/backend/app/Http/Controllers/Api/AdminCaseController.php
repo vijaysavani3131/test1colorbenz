@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\AdminUser;
 use App\Models\CaseNote;
 use App\Models\CaseRecord;
 use App\Services\AdminNotificationService;
 use App\Services\CaseWorkflowService;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -15,6 +17,8 @@ class AdminCaseController extends Controller
 {
     public function index(Request $request, CaseWorkflowService $workflow): JsonResponse
     {
+        /** @var AdminUser $admin */
+        $admin = $request->attributes->get('admin_user');
         $validated = $request->validate([
             'status' => ['nullable', 'string', 'max:40'],
             'service' => ['nullable', 'string', 'max:60'],
@@ -23,7 +27,7 @@ class AdminCaseController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $query = CaseRecord::query()->with('assignee')->latest('last_activity_at')->latest();
+        $query = $this->visibleCases($admin)->with('assignee')->latest('last_activity_at')->latest();
         $query->when($validated['status'] ?? null, fn ($q, $v) => $q->where('status', $v));
         $query->when($validated['service'] ?? null, fn ($q, $v) => $q->where('service_slug', $v));
         $query->when($validated['priority'] ?? null, fn ($q, $v) => $q->where('priority', $v));
@@ -45,18 +49,21 @@ class AdminCaseController extends Controller
                 'current_page' => $paginator->currentPage(),
                 'last_page' => $paginator->lastPage(),
                 'total' => $paginator->total(),
+                'scope' => $admin->canManageStaff() ? 'all' : 'assigned',
             ],
             'metrics' => [
-                'open' => CaseRecord::query()->whereNotIn('status', ['resolved','closed'])->count(),
-                'ready_for_review' => CaseRecord::query()->where('status', 'ready_for_review')->count(),
-                'waiting_customer' => CaseRecord::query()->where('status', 'waiting_customer')->count(),
-                'urgent' => CaseRecord::query()->where('priority', 'urgent')->whereNotIn('status', ['resolved','closed'])->count(),
+                'open' => $this->visibleCases($admin)->whereNotIn('status', ['resolved','closed'])->count(),
+                'ready_for_review' => $this->visibleCases($admin)->where('status', 'ready_for_review')->count(),
+                'waiting_customer' => $this->visibleCases($admin)->where('status', 'waiting_customer')->count(),
+                'urgent' => $this->visibleCases($admin)->where('priority', 'urgent')->whereNotIn('status', ['resolved','closed'])->count(),
             ],
         ]);
     }
 
-    public function show(string $publicId, CaseWorkflowService $workflow): JsonResponse
+    public function show(Request $request, string $publicId, CaseWorkflowService $workflow): JsonResponse
     {
+        /** @var AdminUser $admin */
+        $admin = $request->attributes->get('admin_user');
         $case = CaseRecord::query()
             ->with([
                 'answers', 'documents', 'events', 'notes.adminUser', 'payments', 'assignee', 'consent',
@@ -65,6 +72,7 @@ class AdminCaseController extends Controller
             ->where('public_id', strtoupper($publicId))
             ->firstOrFail();
 
+        $this->authorizeCase($admin, $case);
         return response()->json(['data' => $this->detail($case, $workflow)]);
     }
 
@@ -74,6 +82,8 @@ class AdminCaseController extends Controller
         CaseWorkflowService $workflow,
         AdminNotificationService $notifications,
     ): JsonResponse {
+        /** @var AdminUser $admin */
+        $admin = $request->attributes->get('admin_user');
         $validated = $request->validate([
             'status' => ['nullable', Rule::in(['intake','needs_info','ready_for_review','in_progress','waiting_customer','waiting_external','resolved','closed'])],
             'priority' => ['nullable', Rule::in(['low','normal','high','urgent'])],
@@ -82,6 +92,12 @@ class AdminCaseController extends Controller
         ]);
 
         $case = CaseRecord::query()->where('public_id', strtoupper($publicId))->firstOrFail();
+        $this->authorizeCase($admin, $case);
+
+        if (!$admin->canManageStaff() && (array_key_exists('assigned_admin_user_id', $validated) || array_key_exists('fee_paise', $validated))) {
+            abort(403, 'Only owners and admins can change assignment or service fee.');
+        }
+
         $before = $case->only(['status','priority','assigned_admin_user_id','fee_paise']);
         $case->fill($validated);
 
@@ -94,7 +110,6 @@ class AdminCaseController extends Controller
         $case->last_activity_at = now();
         $case->save();
 
-        $admin = $request->attributes->get('admin_user');
         $workflow->recordEvent($case, 'case_updated', 'Case workflow updated by '.$admin->name, 'admin', $admin->id, [
             'before' => $before,
             'after' => $case->only(['status','priority','assigned_admin_user_id','fee_paise']),
@@ -124,18 +139,21 @@ class AdminCaseController extends Controller
             );
         }
 
-        return $this->show($publicId, $workflow);
+        return $this->show($request, $publicId, $workflow);
     }
 
     public function addNote(Request $request, string $publicId, CaseWorkflowService $workflow): JsonResponse
     {
+        /** @var AdminUser $admin */
+        $admin = $request->attributes->get('admin_user');
         $validated = $request->validate([
             'note' => ['required', 'string', 'max:10000'],
             'customer_visible' => ['nullable', 'boolean'],
         ]);
 
         $case = CaseRecord::query()->where('public_id', strtoupper($publicId))->firstOrFail();
-        $admin = $request->attributes->get('admin_user');
+        $this->authorizeCase($admin, $case);
+
         $note = CaseNote::create([
             'case_record_id' => $case->id,
             'admin_user_id' => $admin->id,
@@ -144,8 +162,23 @@ class AdminCaseController extends Controller
         ]);
 
         $workflow->recordEvent($case, 'note_added', $note->customer_visible ? 'Customer-visible update added.' : 'Internal note added.', 'admin', $admin->id);
-
         return response()->json(['message' => 'Note added.'], 201);
+    }
+
+    private function visibleCases(AdminUser $admin): Builder
+    {
+        $query = CaseRecord::query();
+        if (!$admin->canManageStaff()) {
+            $query->where('assigned_admin_user_id', $admin->id);
+        }
+        return $query;
+    }
+
+    private function authorizeCase(AdminUser $admin, CaseRecord $case): void
+    {
+        if (!$admin->canManageStaff()) {
+            abort_unless((int) $case->assigned_admin_user_id === (int) $admin->id, 403, 'This case is not assigned to you.');
+        }
     }
 
     private function row(CaseRecord $case, CaseWorkflowService $workflow): array
