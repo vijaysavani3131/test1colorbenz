@@ -8,18 +8,27 @@ use Illuminate\Support\Facades\Hash;
 
 class AdminUser extends Model
 {
-    protected $fillable = ['name', 'email', 'password', 'role', 'active', 'last_login_at'];
+    protected $fillable = [
+        'name', 'email', 'phone', 'job_title', 'password', 'role', 'active',
+        'timezone', 'notification_preferences', 'last_login_at',
+    ];
 
     protected $hidden = ['password'];
 
     protected $casts = [
         'active' => 'boolean',
         'last_login_at' => 'datetime',
+        'notification_preferences' => 'array',
     ];
 
     public function tokens(): HasMany
     {
         return $this->hasMany(AdminApiToken::class);
+    }
+
+    public function notifications(): HasMany
+    {
+        return $this->hasMany(AdminNotification::class);
     }
 
     public function setPasswordAttribute(string $value): void
