@@ -11,20 +11,7 @@ class ImageCompressionServiceTest extends TestCase
     {
         $this->assertTrue(function_exists('imagecreatetruecolor'), 'GD must be enabled for image compression tests.');
 
-        $image = imagecreatetruecolor(1600, 1200);
-        for ($y = 0; $y < 1200; $y += 8) {
-            for ($x = 0; $x < 1600; $x += 8) {
-                $colour = imagecolorallocate($image, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255));
-                imagefilledrectangle($image, $x, $y, min($x + 7, 1599), min($y + 7, 1199), $colour);
-            }
-        }
-
-        ob_start();
-        imagejpeg($image, null, 98);
-        $bytes = ob_get_clean();
-        imagedestroy($image);
-
-        $this->assertIsString($bytes);
+        $bytes = $this->largeJpeg();
         $this->assertGreaterThan(ImageCompressionService::TARGET_BYTES, strlen($bytes));
 
         $result = (new ImageCompressionService())->compress($bytes, 'image/jpeg');
@@ -62,5 +49,27 @@ class ImageCompressionServiceTest extends TestCase
         $this->assertFalse($result['compressed']);
         $this->assertSame($bytes, $result['bytes']);
         $this->assertSame('application/pdf', $result['mime']);
+    }
+
+    private function largeJpeg(): string
+    {
+        $width = 2400;
+        $height = 1800;
+        $image = imagecreatetruecolor($width, $height);
+        mt_srand(20260917);
+
+        for ($y = 0; $y < $height; $y += 8) {
+            for ($x = 0; $x < $width; $x += 8) {
+                $colour = imagecolorallocate($image, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255));
+                imagefilledrectangle($image, $x, $y, min($x + 7, $width - 1), min($y + 7, $height - 1), $colour);
+            }
+        }
+
+        ob_start();
+        imagejpeg($image, null, 100);
+        $bytes = ob_get_clean();
+        imagedestroy($image);
+
+        return (string) $bytes;
     }
 }
