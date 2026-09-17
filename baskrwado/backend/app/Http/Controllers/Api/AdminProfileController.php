@@ -25,7 +25,7 @@ class AdminProfileController extends Controller
             'job_title' => ['nullable', 'string', 'max:100'],
             'department' => ['nullable', 'string', 'max:100'],
             'timezone' => ['required', 'string', Rule::in(['Asia/Kolkata', 'UTC'])],
-            'language' => ['required', 'string', Rule::in(['en', 'hi', 'gu'])],
+            'language' => ['sometimes', 'string', Rule::in(['en', 'hi', 'gu'])],
             'bio' => ['nullable', 'string', 'max:1200'],
         ]);
 
