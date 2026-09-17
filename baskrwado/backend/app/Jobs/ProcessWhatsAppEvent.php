@@ -8,6 +8,7 @@ use App\Models\ConversationMessage;
 use App\Models\ConversationSession;
 use App\Models\WhatsAppEvent;
 use App\Services\CaseWorkflowService;
+use App\Services\ImageCompressionService;
 use App\Services\OpenAiCaseService;
 use App\Services\WhatsAppCloudService;
 use Illuminate\Bus\Queueable;
@@ -28,8 +29,12 @@ class ProcessWhatsAppEvent implements ShouldQueue
 
     public function __construct(public int $eventId) {}
 
-    public function handle(WhatsAppCloudService $whatsapp, CaseWorkflowService $workflow, OpenAiCaseService $ai): void
-    {
+    public function handle(
+        WhatsAppCloudService $whatsapp,
+        CaseWorkflowService $workflow,
+        OpenAiCaseService $ai,
+        ImageCompressionService $compressor,
+    ): void {
         $event = WhatsAppEvent::query()->find($this->eventId);
         if (!$event || $event->processed_at) {
             return;
@@ -121,7 +126,7 @@ class ProcessWhatsAppEvent implements ShouldQueue
         }
 
         if ($this->isMediaMessage($message)) {
-            $this->storeMedia($case, $message, $whatsapp, $workflow);
+            $this->storeMedia($case, $message, $whatsapp, $workflow, $compressor);
             $this->reply($session, $whatsapp, $this->documentReceivedText($session->locale));
         }
 
@@ -181,8 +186,13 @@ class ProcessWhatsAppEvent implements ShouldQueue
         ]);
     }
 
-    private function storeMedia(CaseRecord $case, array $message, WhatsAppCloudService $whatsapp, CaseWorkflowService $workflow): void
-    {
+    private function storeMedia(
+        CaseRecord $case,
+        array $message,
+        WhatsAppCloudService $whatsapp,
+        CaseWorkflowService $workflow,
+        ImageCompressionService $compressor,
+    ): void {
         $type = (string) ($message['type'] ?? '');
         $media = $message[$type] ?? [];
         $mediaId = (string) ($media['id'] ?? '');
@@ -195,32 +205,60 @@ class ProcessWhatsAppEvent implements ShouldQueue
             return;
         }
 
-        $mime = (string) ($download['mime_type'] ?? 'application/octet-stream');
+        $mime = strtolower((string) ($download['mime_type'] ?? 'application/octet-stream'));
+        $originalBytes = $download['bytes'] ?? '';
+        if (!is_string($originalBytes) || $originalBytes === '') {
+            return;
+        }
+
+        $processed = str_starts_with($mime, 'image/')
+            ? $compressor->compress($originalBytes, $mime)
+            : [
+                'bytes' => $originalBytes,
+                'mime' => $mime,
+                'size_bytes' => strlen($originalBytes),
+                'compressed' => false,
+            ];
+
         $extension = match (true) {
-            str_contains($mime, 'pdf') => 'pdf',
-            str_contains($mime, 'png') => 'png',
-            str_contains($mime, 'webp') => 'webp',
-            str_contains($mime, 'jpeg'), str_contains($mime, 'jpg') => 'jpg',
+            str_contains($processed['mime'], 'pdf') => 'pdf',
+            str_contains($processed['mime'], 'png') => 'png',
+            str_contains($processed['mime'], 'webp') => 'webp',
+            str_contains($processed['mime'], 'jpeg'), str_contains($processed['mime'], 'jpg') => 'jpg',
             default => 'bin',
         };
         $original = (string) ($media['filename'] ?? ('whatsapp-'.$mediaId.'.'.$extension));
         $path = 'cases/'.$case->public_id.'/'.Str::uuid().'.'.$extension;
-        Storage::disk('private')->put($path, $download['bytes']);
+        if (!Storage::disk('private')->put($path, $processed['bytes'])) {
+            throw new \RuntimeException('Unable to store WhatsApp document.');
+        }
 
         $document = CaseDocument::create([
             'case_record_id' => $case->id,
             'category' => 'evidence',
             'original_name' => Str::limit($original, 255, ''),
-            'mime_type' => $mime,
-            'size_bytes' => (int) ($download['file_size'] ?? strlen($download['bytes'])),
+            'mime_type' => $processed['mime'],
+            'size_bytes' => $processed['size_bytes'],
             'storage_disk' => 'private',
             'storage_path' => $path,
-            'sha256' => (string) ($download['sha256'] ?? hash('sha256', $download['bytes'])),
+            'sha256' => hash('sha256', $processed['bytes']),
             'source' => 'whatsapp',
             'status' => 'uploaded',
         ]);
 
-        $workflow->recordEvent($case, 'document_uploaded', 'WhatsApp document received: '.$document->original_name, 'customer', null, ['document_id' => $document->id]);
+        $workflow->recordEvent(
+            $case,
+            'document_uploaded',
+            'WhatsApp document received: '.$document->original_name.($processed['compressed'] ? ' (image optimised for storage)' : ''),
+            'customer',
+            null,
+            [
+                'document_id' => $document->id,
+                'compressed' => $processed['compressed'],
+                'original_size_bytes' => strlen($originalBytes),
+                'stored_size_bytes' => $processed['size_bytes'],
+            ],
+        );
         AnalyzeCaseDocument::dispatch($document->id);
     }
 
