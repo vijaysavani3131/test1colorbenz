@@ -1,0 +1,41 @@
+/* Desktop/tablet admin sidebar stability fix.
+   Keep the operations navigation pinned to the viewport while the case workspace scrolls. */
+@media (min-width: 641px) {
+  .ops-shell {
+    display: block;
+    min-height: 100vh;
+  }
+
+  .ops-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 218px;
+    height: 100vh;
+    z-index: 100;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .ops-main {
+    margin-left: 218px;
+    min-height: 100vh;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 900px) {
+  .ops-sidebar {
+    width: 68px;
+  }
+
+  .ops-main {
+    margin-left: 68px;
+  }
+}
+
+@media (max-width: 640px) {
+  .ops-main {
+    margin-left: 0;
+  }
+}
