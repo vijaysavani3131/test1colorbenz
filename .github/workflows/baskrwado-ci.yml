@@ -84,3 +84,38 @@ jobs:
           name: BasKarwaDo-Full-Project
           path: /tmp/BasKarwaDo-Full-Project.zip
           retention-days: 7
+
+  cpanel-package:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: baskrwado/frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: baskrwado/frontend
+        run: npm ci --no-audit --no-fund
+      - name: Build same-domain frontend
+        working-directory: baskrwado/frontend
+        env:
+          VITE_API_URL: /api
+        run: npm run build
+      - name: Create cPanel-ready package
+        run: |
+          rm -rf /tmp/BasKarwaDo-cPanel
+          mkdir -p /tmp/BasKarwaDo-cPanel
+          cp -a baskrwado/frontend/dist/. /tmp/BasKarwaDo-cPanel/
+          cp baskrwado/deploy/cpanel-root.htaccess /tmp/BasKarwaDo-cPanel/.htaccess
+          cp baskrwado/deploy/cpanel-api.php /tmp/BasKarwaDo-cPanel/api.php
+          cp baskrwado/docs/CPANEL-SAME-DOMAIN.md /tmp/BasKarwaDo-cPanel/DEPLOYMENT.md
+          cd /tmp/BasKarwaDo-cPanel
+          zip -qr /tmp/BasKarwaDo-cPanel-Frontend-Ready.zip .
+      - name: Upload cPanel-ready frontend ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BasKarwaDo-cPanel-Frontend-Ready
+          path: /tmp/BasKarwaDo-cPanel-Frontend-Ready.zip
+          retention-days: 7
