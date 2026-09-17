@@ -1,25 +1,29 @@
-/* Desktop/tablet admin sidebar stability fix.
-   Keep the operations navigation pinned to the viewport while the case workspace scrolls. */
+/* Stable admin sidebar layout.
+   Desktop/tablet: pin navigation to the viewport and let only the main workspace scroll.
+   Mobile: keep the existing horizontal/top navigation layout. */
 @media (min-width: 641px) {
   .ops-shell {
     display: block;
     min-height: 100vh;
+    width: 100%;
+    overflow-x: clip;
   }
 
   .ops-sidebar {
-    position: fixed;
+    position: fixed !important;
     top: 0;
     left: 0;
     bottom: 0;
     width: 218px;
     height: 100vh;
     z-index: 100;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    overflow: visible;
   }
 
   .ops-main {
     margin-left: 218px;
+    width: calc(100% - 218px);
+    min-width: 0;
     min-height: 100vh;
   }
 }
@@ -31,11 +35,24 @@
 
   .ops-main {
     margin-left: 68px;
+    width: calc(100% - 68px);
   }
 }
 
 @media (max-width: 640px) {
+  .ops-shell {
+    overflow-x: visible;
+  }
+
+  .ops-sidebar {
+    position: relative !important;
+    width: auto;
+    height: auto;
+    overflow: visible;
+  }
+
   .ops-main {
     margin-left: 0;
+    width: auto;
   }
 }
