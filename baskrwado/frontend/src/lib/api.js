@@ -53,6 +53,13 @@ export const api = {
   adminLogin: (email, password) => request('/admin/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
   adminMe: () => request('/admin/auth/me', { admin: true }),
   adminLogout: () => request('/admin/auth/logout', { method: 'POST', admin: true }),
+  adminUpdateProfile: (payload) => request('/admin/profile', { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
+  adminChangePassword: (payload) => request('/admin/profile/password', { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
+  adminUpdateNotificationPreferences: (payload) => request('/admin/profile/notification-preferences', { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
+  adminNotifications: () => request('/admin/notifications', { admin: true }),
+  adminReadNotification: (id) => request(`/admin/notifications/${id}/read`, { method: 'POST', admin: true }),
+  adminReadAllNotifications: () => request('/admin/notifications/read-all', { method: 'POST', admin: true }),
+
   adminCases: (params = {}) => request(`/admin/cases${queryString(params)}`, { admin: true }),
   adminCase: (publicId) => request(`/admin/cases/${encodeURIComponent(publicId)}`, { admin: true }),
   adminUpdateCase: (publicId, payload) => request(`/admin/cases/${encodeURIComponent(publicId)}`, {
@@ -63,6 +70,7 @@ export const api = {
   }),
   adminStaff: () => request('/admin/staff', { admin: true }),
   adminCreateStaff: (payload) => request('/admin/staff', { method: 'POST', admin: true, body: JSON.stringify(payload) }),
+  adminUpdateStaff: (staffId, payload) => request(`/admin/staff/${staffId}`, { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
   adminVerifyDocument: (documentId, status) => request(`/admin/documents/${documentId}/verify`, {
     method: 'PATCH', admin: true, body: JSON.stringify({ status }),
   }),
