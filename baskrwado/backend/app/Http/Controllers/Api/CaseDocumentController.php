@@ -27,7 +27,7 @@ class CaseDocumentController extends Controller
         abort_unless(hash_equals($case->phone, $this->normalizePhone($validated['phone'])), 403, 'The case ID and mobile number do not match.');
 
         $file = $validated['file'];
-        $mime = $file->getMimeType() ?: 'application/octet-stream';
+        $mime = strtolower($file->getMimeType() ?: 'application/octet-stream');
         $bytes = file_get_contents($file->getRealPath());
         abort_unless(is_string($bytes), 500, 'Unable to read uploaded document.');
 
@@ -35,7 +35,9 @@ class CaseDocumentController extends Controller
             'bytes' => $bytes,
             'mime' => $mime,
             'size_bytes' => strlen($bytes),
+            'original_size_bytes' => strlen($bytes),
             'compressed' => false,
+            'target_met' => strlen($bytes) <= ImageCompressionService::TARGET_BYTES,
         ];
 
         $extension = strtolower($file->getClientOriginalExtension() ?: 'bin');
@@ -62,7 +64,13 @@ class CaseDocumentController extends Controller
             'Customer uploaded '.$document->original_name.($processed['compressed'] ? ' (image optimised for storage)' : ''),
             'customer',
             null,
-            ['document_id' => $document->id, 'compressed' => $processed['compressed']]
+            [
+                'document_id' => $document->id,
+                'compressed' => $processed['compressed'],
+                'target_met' => $processed['target_met'],
+                'original_size_bytes' => $processed['original_size_bytes'],
+                'stored_size_bytes' => $processed['size_bytes'],
+            ]
         );
         AnalyzeCaseDocument::dispatch($document->id);
 
@@ -75,6 +83,7 @@ class CaseDocumentController extends Controller
                 'status' => $document->status,
                 'size_bytes' => $document->size_bytes,
                 'compressed' => $processed['compressed'],
+                'target_met' => $processed['target_met'],
             ],
         ], 201);
     }
