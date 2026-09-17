@@ -62,6 +62,13 @@ export const api = {
   adminMe: () => request('/admin/auth/me', { admin: true }),
   adminLogout: () => request('/admin/auth/logout', { method: 'POST', admin: true }),
   adminUpdateProfile: (payload) => request('/admin/profile', { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
+  adminUploadAvatar: (file) => {
+    const form = new FormData();
+    form.append('avatar', file);
+    return request('/admin/profile/avatar', { method: 'POST', admin: true, body: form });
+  },
+  adminProfileAvatar: () => adminBlob('/admin/profile/avatar', 'Unable to load profile image.'),
+  adminRemoveAvatar: () => request('/admin/profile/avatar', { method: 'DELETE', admin: true }),
   adminChangePassword: (payload) => request('/admin/profile/password', { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
   adminUpdateNotificationPreferences: (payload) => request('/admin/profile/notification-preferences', { method: 'PATCH', admin: true, body: JSON.stringify(payload) }),
   adminNotifications: () => request('/admin/notifications', { admin: true }),
