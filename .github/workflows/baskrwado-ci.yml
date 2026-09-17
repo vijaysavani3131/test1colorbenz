@@ -65,3 +65,22 @@ jobs:
         run: find app bootstrap config database routes tests -name '*.php' -print0 2>/dev/null | xargs -0 -r -n1 php -l
       - name: Test suite
         run: php artisan test
+
+  package:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create source package
+        run: |
+          rm -rf /tmp/BasKarwaDo
+          mkdir -p /tmp/BasKarwaDo
+          cp -a baskrwado/. /tmp/BasKarwaDo/
+          cd /tmp
+          zip -qr BasKarwaDo-Full-Project.zip BasKarwaDo
+      - name: Upload full project ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: BasKarwaDo-Full-Project
+          path: /tmp/BasKarwaDo-Full-Project.zip
+          retention-days: 7
