@@ -98,16 +98,20 @@ class WhatsAppMediaCompressionTest extends TestCase
 
     private function largeJpeg(): string
     {
-        $image = imagecreatetruecolor(1600, 1200);
-        for ($y = 0; $y < 1200; $y += 8) {
-            for ($x = 0; $x < 1600; $x += 8) {
+        $width = 2400;
+        $height = 1800;
+        $image = imagecreatetruecolor($width, $height);
+        mt_srand(20260917);
+
+        for ($y = 0; $y < $height; $y += 8) {
+            for ($x = 0; $x < $width; $x += 8) {
                 $colour = imagecolorallocate($image, mt_rand(0, 255), mt_rand(0, 255), mt_rand(0, 255));
-                imagefilledrectangle($image, $x, $y, min($x + 7, 1599), min($y + 7, 1199), $colour);
+                imagefilledrectangle($image, $x, $y, min($x + 7, $width - 1), min($y + 7, $height - 1), $colour);
             }
         }
 
         ob_start();
-        imagejpeg($image, null, 98);
+        imagejpeg($image, null, 100);
         $bytes = ob_get_clean();
         imagedestroy($image);
 
