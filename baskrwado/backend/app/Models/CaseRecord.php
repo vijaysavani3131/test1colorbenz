@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class CaseRecord extends Model
@@ -70,6 +71,11 @@ class CaseRecord extends Model
     public function conversations(): HasMany
     {
         return $this->hasMany(ConversationSession::class);
+    }
+
+    public function consent(): HasOne
+    {
+        return $this->hasOne(CaseConsent::class);
     }
 
     public function assignee(): BelongsTo
