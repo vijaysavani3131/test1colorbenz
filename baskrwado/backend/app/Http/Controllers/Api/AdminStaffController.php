@@ -11,8 +11,12 @@ use Illuminate\Validation\Rule;
 
 class AdminStaffController extends Controller
 {
-    public function index(): JsonResponse
+    public function index(Request $request): JsonResponse
     {
+        /** @var AdminUser $actor */
+        $actor = $request->attributes->get('admin_user');
+        abort_unless($actor->canManageStaff(), 403, 'Only owners and admins can view the team directory.');
+
         return response()->json([
             'data' => AdminUser::query()->orderBy('name')->get()->map(fn (AdminUser $user) => [
                 'id' => $user->id,
@@ -31,6 +35,7 @@ class AdminStaffController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        /** @var AdminUser $actor */
         $actor = $request->attributes->get('admin_user');
         abort_unless($actor->canManageStaff(), 403, 'Only owners and admins can manage staff.');
 
